@@ -1,0 +1,9 @@
+{
+  "market": {
+    "cpi_inflation": 0.03,
+    "equity_expected_return": 0.08,
+    "fixed_income_expected_return": 0.04,
+    "cash_equivalent_expected_return": 0.0344,
+    "discount_rate": 0.0344
+  }
+}

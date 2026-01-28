@@ -1,0 +1,12 @@
+{
+    "name": "Retirement",
+    "assets_today": 100000,
+    "liabilities": [
+        {
+            "type": "recurring",
+            "amount_today": "${retirement.income}",
+            "start_date": "2060-01-01",
+            "duration_years": 30
+        }
+    ]
+}
