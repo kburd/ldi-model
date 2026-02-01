@@ -3,21 +3,13 @@ import json, re, copy
 from pathlib import Path
 from typing import Any, Dict
 import pandas as pd
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+from ldi.engine.allocator import GlidePath
 
 from ldi.engine.model import LDIModel
 from ldi.engine.assumptions import load_assumptions_from_path
 
-RESULT_SCHEMA = {
-    "name": "Name",
-    "assets_today": "Portfolio Value (Today)",
-    "surplus_at_maturity": "Projected Surplus / Shortfall (At Maturity)",
-    "equity_allocation": "Equity Allocation (%)",
-    "fixed_income_allocation": "Fixed Income Allocation (%)",
-    "net_contribution_today": "Required Net Contribution (Today)",
-    "monthly_contribution": "Required Monthly Contribution",
-}
+MAX_ITERATIONS = 40
+TOLERANCE = 100
 
 def run_scenario(scenario_file: Path, constants_file: Path = None):
     
@@ -27,14 +19,15 @@ def run_scenario(scenario_file: Path, constants_file: Path = None):
     # Base Line
     result = LDIModel(
         assumptions=assumptions, 
-        scenario=scenario
+        scenario=scenario,
+        allocation_strategy=GlidePath,
     ).result()
 
     # Shortfall / Surplus and Contribution Calculations
     result["net_contribution_today"] = _calculate_current_balance_adjustment(assumptions, scenario)
     result["monthly_contribution"] = 0 if result["surplus_at_maturity"] > 0 else _calculate_monthly_contribution_adjustment(assumptions, scenario)
 
-    return to_table_row(result)
+    return result
 
 def _load_scenario(scenario_file: Path, constants_file: Path):
 
@@ -79,19 +72,16 @@ def _resolve_refs(obj: Any, constants: Dict[str, Any]) -> Any:
 
 def _calculate_current_balance_adjustment(assumptions, scenario):
 
-    MAX_ITERATIONS = 20
-    TOLERANCE = 1000
-
     scenario_copy = copy.deepcopy(scenario)
 
     liability_config = scenario["liabilities"][0]
 
     start = pd.Timestamp(liability_config["start_date"])
-    window = liability_config.get("window", 1)
+    duration_years = liability_config.get("duration_years", 1)
     amount_today = liability_config["amount_today"]
-    inflation = liability_config.get("inflation", assumptions.cpi_inflation)
+    inflation = liability_config.get("inflation", assumptions.inflation_cpi)
 
-    maturity = start + pd.DateOffset(years=window)
+    maturity = start + pd.DateOffset(years=duration_years)
     first_cashflow = pd.Timestamp.today() + pd.offsets.MonthBegin(1)
 
     horizon = (
@@ -99,7 +89,7 @@ def _calculate_current_balance_adjustment(assumptions, scenario):
         + (maturity.month - first_cashflow.month) / 12
     )
 
-    upper = len(scenario["liabilities"]) * amount_today * window * (1 + inflation) ** horizon
+    upper = len(scenario["liabilities"]) * amount_today * duration_years * (1 + inflation) ** horizon
     lower = 0
 
     for idx in range(MAX_ITERATIONS):
@@ -107,9 +97,11 @@ def _calculate_current_balance_adjustment(assumptions, scenario):
         middle = (lower + upper) / 2
         scenario_copy["assets_today"] = middle
 
+
         result = LDIModel(
             assumptions=assumptions,
-            scenario=scenario_copy
+            scenario=scenario_copy,
+            allocation_strategy=GlidePath
         ).result()
         
         if result["surplus_at_maturity"] <= 0:
@@ -123,9 +115,6 @@ def _calculate_current_balance_adjustment(assumptions, scenario):
 
 def _calculate_monthly_contribution_adjustment(assumptions, scenario):
 
-    MAX_ITERATIONS = 20
-    TOLERANCE = 1000
-
     if "deposit" not in scenario:
         scenario["deposit"] = {
             "monthly": 0
@@ -138,7 +127,7 @@ def _calculate_monthly_contribution_adjustment(assumptions, scenario):
     start = pd.Timestamp(liability_config["start_date"])
     window = liability_config.get("duration_years", 1)
     amount_today = liability_config["amount_today"]
-    inflation = liability_config.get("inflation", assumptions.cpi_inflation)
+    inflation = liability_config.get("inflation", assumptions.inflation_cpi)
 
     maturity = start + pd.DateOffset(years=window)
     first_cashflow = pd.Timestamp.today() + pd.offsets.MonthBegin(1)
@@ -158,7 +147,8 @@ def _calculate_monthly_contribution_adjustment(assumptions, scenario):
 
         result = LDIModel(
             assumptions=assumptions,
-            scenario=scenario_copy
+            scenario=scenario_copy,
+            allocation_strategy=GlidePath
         ).result()
         
         if result["surplus_at_maturity"] <= 0:
@@ -169,10 +159,3 @@ def _calculate_monthly_contribution_adjustment(assumptions, scenario):
             break
 
     return middle - scenario["deposit"]["monthly"] 
-
-def to_table_row(result):
-    return {
-        RESULT_SCHEMA[k]: v
-        for k, v in result.items()
-        if k in RESULT_SCHEMA
-    }

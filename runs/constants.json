@@ -1,3 +1,6 @@
 {
-  "retirement.income": 105000
+  "tuition.inflation": 0.048,
+  "tuition.amount": 17328,
+
+  "retirement.income": 100000
 }

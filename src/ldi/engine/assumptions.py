@@ -5,45 +5,24 @@ from pathlib import Path
 import json
 
 
+from dataclasses import dataclass
+from typing import Dict, Any
+from pathlib import Path
+import json
+
+
 @dataclass(frozen=True)
 class Assumptions:
-    # Market regime
-    cpi_inflation: float
-
-    equity_expected_return: float
-    fixed_income_expected_return: float
-    cash_equivalent_expected_return: float
-
+    inflation_cpi: float
     discount_rate: float
+    assets: Dict[str, float]
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Assumptions":
-
-        if "market" not in data:
-            raise ValueError("Missing 'market' section in assumptions data")
-
-        market = data["market"]
-
-        required = {
-            "cpi_inflation",
-            "equity_expected_return",
-            "fixed_income_expected_return",
-            "cash_equivalent_expected_return",
-            "discount_rate",
-        }
-
-        missing = required - market .keys()
-        if missing:
-            raise ValueError(f"Missing assumption fields: {missing}")
-
         return cls(
-            cpi_inflation=float(market ["cpi_inflation"]),
-
-            equity_expected_return=float(market ["equity_expected_return"]),
-            fixed_income_expected_return=float(market ["fixed_income_expected_return"]),
-            cash_equivalent_expected_return=float(market ["cash_equivalent_expected_return"]),
-
-            discount_rate=float(market ["discount_rate"]),
+            inflation_cpi=float(data["inflation_cpi"]),
+            discount_rate=float(data["discount_rate"]),
+            assets={k: float(v) for k, v in data["assets"].items()},
         )
 
 def load_assumptions_from_path(file_path: str | Path = None) -> Assumptions:

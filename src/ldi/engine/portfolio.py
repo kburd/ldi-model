@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 from typing import Union
 
-from ldi.engine.allocator import AllocationStrategy, EquityOnly
+from ldi.engine.allocator import AllocationStrategy
+from ldi.engine.assumptions import Assumptions
 
 class Liability:
 
@@ -58,9 +59,7 @@ class BaseBucket:
             name: str,
             amount: float, 
             df: pd.DataFrame,
-            inflation_rate: float,
-            equity_return_rate: float,
-            fixed_income_return_rate: float,
+            assumptions: Assumptions,
             allocation_strategy: AllocationStrategy,
             contributions: Union[float, pd.Series] = 0.0,
             allow_surplus: bool = True
@@ -68,15 +67,12 @@ class BaseBucket:
 
         self.name = name
         self.amount = amount
+        self.assumptions = assumptions
         self.allocation_strategy = allocation_strategy
         self.contributions = contributions
         self.allow_surplus = allow_surplus
 
         self.df = df.copy(deep=True)
-
-        self.inflation_rate = inflation_rate
-        self.equity_return_rate = equity_return_rate
-        self.fixed_income_return_rate = fixed_income_return_rate
 
         self.contributions_ts = self._normalize_contributions(contributions)
         
@@ -118,48 +114,49 @@ class BaseBucket:
 
     def _build(self):
 
-        infl_m = self._to_monthly(self.inflation_rate)
-        equity_m = self._to_monthly(self.equity_return_rate)
-        bond_m = self._to_monthly(self.fixed_income_return_rate)
-        real_equity_m = (1 + equity_m) / (1 + infl_m) - 1
-        real_bond_m = (1 + bond_m) / (1 + infl_m) - 1
+        infl_m = self._to_monthly(self.assumptions.inflation_cpi)
 
-        self.df["equity_allocation"] = self.df["horizon"].apply(self.allocation_strategy.equity_allocation)
-        self.df["fixed_income_allocation"] = self.df["horizon"].apply(self.allocation_strategy.fixed_income_allocation)
-        self.df["expected_return"] = self.df["equity_allocation"] * real_equity_m + self.df["fixed_income_allocation"] * real_bond_m
-        self.df["growth_factor"] = (1 + self.df["expected_return"]).shift(1, fill_value=1).cumprod()
+        assets_today = self.amount 
 
-        balances, surpluses = self._project_balances_and_surpluses()
-
-        self.df["asset_balance"] = balances
-        self.df["surplus"] = surpluses
-
-    def _project_balances_and_surpluses(self):
-
-        balances = []
-        surpluses = []
-
-        assets_today = self.amount  # initial assets_today
+        rows = []
 
         for t in range(len(self.df)):
-            liability = self.df.at[t, "pv_remaining"]
 
-            # record assets_today at start of period t
+            liability = self.df.at[t, "pv_remaining"]
+            horizon = self.df.at[t, "horizon"]
+            funding_ratio = assets_today / liability if liability > 0 else None
+            
+            allocations = self.allocation_strategy.get_allocation({
+                "horizon_months": horizon,
+                "funding_ratio": funding_ratio
+            })
+
+            expected_return = 0.0
+            for asset, weight in allocations.items():
+                nominal_m = self._to_monthly(self.assumptions.assets[asset])
+                real_m = (1 + nominal_m) / (1 + infl_m) - 1
+                expected_return += weight * real_m
+
             if self.allow_surplus:
                 surplus = max(0, assets_today - liability)
                 assets_today -= surplus
             else:
                 surplus = 0
 
-            balances.append(assets_today)
-            surpluses.append(surplus)
+            rows.append({
+                "t": t,
+                "asset_balance": assets_today,
+                "funding_ratio": funding_ratio,
+                "allocations": allocations,
+                "expected_return": expected_return,
+                "surplus": surplus,
+            })
 
-            # now roll forward to next period
-            r = self.df.at[t, "expected_return"]
-            assets_today *= (1 + r)
+            assets_today *= (1 + expected_return)
             assets_today += self.contributions_ts.iloc[t]
 
-        return balances, surpluses
+        proj_df = pd.DataFrame(rows).set_index("t")
+        self.df = self.df.join(proj_df)
         
     def _to_monthly(self, annual_rate):
         return (1 + annual_rate) ** (1/12) - 1
@@ -170,11 +167,8 @@ class BaseBucket:
     def get_asset_balance_by_period(self, period):
         return self._get_column_by_period("asset_balance", period)
     
-    def get_equity_allocation_by_period(self, period):
-        return self._get_column_by_period("equity_allocation", period)
-
-    def get_fixed_income_allocation_by_period(self, period):
-        return self._get_column_by_period("fixed_income_allocation", period)
+    def get_allocations_by_period(self, period):
+        return self._get_column_by_period("allocations", period)
     
     def get_surplus_series(self):
         s = self.df.set_index("date")["surplus"]
@@ -188,9 +182,8 @@ class SurplusBucket(BaseBucket):
         amount: float,
         horizon_months: int,
         valuation_date: pd.Timestamp,
-        inflation_rate: float,
-        equity_return_rate: float,
-        fixed_income_return_rate: float,
+        assumptions: Assumptions,
+        allocation_strategy: AllocationStrategy,
         contributions: Union[float, pd.Series] = 0.0,
     ):
 
@@ -200,11 +193,9 @@ class SurplusBucket(BaseBucket):
             freq="MS"
         )
 
-        horizon = np.arange(horizon_months)[::-1]
-
         df = pd.DataFrame({
             "date": dates,
-            "horizon": horizon,
+            "horizon": np.inf,
             "pv_remaining": 0.0,   
         })
 
@@ -212,15 +203,11 @@ class SurplusBucket(BaseBucket):
             name=name,
             amount=amount,
             df=df,
-            inflation_rate=inflation_rate,
-            equity_return_rate=equity_return_rate,
-            fixed_income_return_rate=fixed_income_return_rate,
-            allocation_strategy=EquityOnly,
+            assumptions=assumptions,
+            allocation_strategy=allocation_strategy,
             contributions=contributions,
             allow_surplus=False
         )
-
-        self.df["funding_ratio"] = np.inf
 
 class RequiredBucket(BaseBucket):
 
@@ -229,9 +216,7 @@ class RequiredBucket(BaseBucket):
         name: str,
         amount: float,
         liability: Liability,
-        inflation_rate: float,
-        equity_return_rate: float,
-        fixed_income_return_rate: float,
+        assumptions: Assumptions,
         allocation_strategy: AllocationStrategy,
         contributions: float = 0,
     ):
@@ -240,9 +225,7 @@ class RequiredBucket(BaseBucket):
             name=name,
             amount=amount,
             df=liability.df,
-            inflation_rate=inflation_rate,
-            equity_return_rate=equity_return_rate,
-            fixed_income_return_rate=fixed_income_return_rate,
+            assumptions=assumptions,
             allocation_strategy=allocation_strategy,
             contributions=contributions,
             allow_surplus=True
@@ -250,7 +233,6 @@ class RequiredBucket(BaseBucket):
 
         self.liability = liability
 
-        self.df["funding_ratio"] = self.df["asset_balance"] / self.df["pv_remaining"]
         self.df["shortfall"] = (self.df["pv_remaining"] - self.df["asset_balance"]).clip(lower=0)
 
     def get_liability(self):

@@ -1,20 +1,16 @@
 
 import pandas as pd
-from dataclasses import dataclass
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 from typing import List
 
-from ldi.engine.allocator import GlidePath
 from ldi.engine.assumptions import Assumptions
 from ldi.engine.portfolio import SurplusBucket, RequiredBucket, Liability
+from ldi.engine.allocator import AllocationStrategy
 
 class LDIModel:
 
-    TOLERANCE = 100
-    MAX_ITERATIONS = 20
-
-    def __init__(self, *, assumptions: Assumptions, scenario: dict):
+    def __init__(self, *, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
 
         self.assumptions = assumptions
 
@@ -27,6 +23,8 @@ class LDIModel:
         self.liabilities_config = scenario["liabilities"]
         self.depost = scenario.get("deposit", {})
         self.contributions = self.depost.get("monthly", 0)
+
+        self.allocation_strategy = allocation_strategy
 
         self.valuation_date = pd.Timestamp.today()
 
@@ -52,7 +50,7 @@ class LDIModel:
 
             first_withdrawal = datetime.strptime(liability_config["start_date"], "%Y-%m-%d").date()
             withdrawal_amount = liability_config["amount_today"]
-            inflation_rate = liability_config.get("inflation_rate", self.assumptions.cpi_inflation)
+            inflation_rate = liability_config.get("inflation_rate", self.assumptions.inflation_cpi)
 
             if liability_config["type"] == "recurring":
                 duration_years = liability_config["duration_years"]
@@ -86,10 +84,8 @@ class LDIModel:
                 name=liability.maturity_date,
                 amount=asset_balance,
                 liability=liability,
-                inflation_rate=self.assumptions.cpi_inflation,
-                equity_return_rate=self.assumptions.equity_expected_return,
-                fixed_income_return_rate=self.assumptions.fixed_income_expected_return,
-                allocation_strategy= GlidePath,
+                assumptions=self.assumptions,
+                allocation_strategy=self.allocation_strategy,
                 contributions=contributions_per_bucket
             )
 
@@ -108,9 +104,8 @@ class LDIModel:
             amount=surplus_capital,
             horizon_months=max([liability.horizon() for liability in self.liabilities]),
             valuation_date=self.valuation_date,
-            inflation_rate=self.assumptions.cpi_inflation,
-            equity_return_rate=self.assumptions.equity_expected_return,
-            fixed_income_return_rate=self.assumptions.fixed_income_expected_return,
+            assumptions=self.assumptions,
+            allocation_strategy=self.allocation_strategy,
             contributions=surplus_series.sum(axis=1)
         )
 
@@ -126,43 +121,62 @@ class LDIModel:
 
     def _calculate_current_asset_allocations(self):
 
-        equity_numerator = 0
-        fixed_income_numerator = 0
-        denominator = 0 
+        numerators = {}
+        denominator = 0.0
 
         if self.current_balance == 0:
-
             for bucket in self.required_buckets:
-                equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_liability().present_value()
-                fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_liability().present_value()
-            denominator = self.present_value
+                weight = bucket.get_liability().present_value()
+                alloc = bucket.get_allocations_by_period(0)
+
+                for asset, asset_weight in alloc.items():
+                    numerators[asset] = numerators.get(asset, 0.0) + asset_weight * weight
+
+                denominator += weight
 
         else:
             for bucket in [*self.required_buckets, self.surplus_bucket]:
-                equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
-                fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
-            denominator = self.current_balance
+                weight = bucket.get_asset_balance_by_period(0)
+                alloc = bucket.get_allocations_by_period(0)
 
-        self.current_equity_allocation = equity_numerator / denominator
-        self.current_fixed_income_allocation = fixed_income_numerator / denominator
+                for asset, asset_weight in alloc.items():
+                    numerators[asset] = numerators.get(asset, 0.0) + asset_weight * weight
 
-    # def result(self):
+                denominator += weight
 
-    #     return {
-    #         "Name": self.name,
-    #         "Portfolio Value (Today)": self.current_balance,
-    #         "Projected Surplus / Shortfall (At Maturity)": self.funded_status,
-    #         "Equity Allocation (%)": self.current_equity_allocation,
-    #         "Fixed Income Allocation (%)": self.current_fixed_income_allocation,
-    #     }
+        self.current_allocations = {
+            asset: value / denominator
+            for asset, value in numerators.items()
+        }
+
+
+    # def _calculate_current_asset_allocations(self):
+
+    #     equity_numerator = 0
+    #     fixed_income_numerator = 0
+    #     denominator = 0 
+
+    #     if self.current_balance == 0:
+
+    #         for bucket in self.required_buckets:
+    #             equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_liability().present_value()
+    #             fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_liability().present_value()
+    #         denominator = self.present_value
+
+    #     else:
+    #         for bucket in [*self.required_buckets, self.surplus_bucket]:
+    #             equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
+    #             fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
+    #         denominator = self.current_balance
+
+    #     self.current_equity_allocation = equity_numerator / denominator
+    #     self.current_fixed_income_allocation = fixed_income_numerator / denominator
 
     def result(self):
+
         return {
             "name": self.name,
             "assets_today": self.current_balance,
             "surplus_at_maturity": self.funded_status,
-            "equity_allocation": self.current_equity_allocation,
-            "fixed_income_allocation": self.current_fixed_income_allocation,
-            # "net_contribution_today": self.required_net_contribution,
-            # "monthly_contribution": self.required_monthly_contribution,
+            "allocations": self.current_allocations
         }
