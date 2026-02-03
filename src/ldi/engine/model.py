@@ -21,12 +21,11 @@ class LDIModel:
         self.name = scenario["name"]
         self.current_balance = scenario["assets_today"]
         self.liabilities_config = scenario["liabilities"]
-        self.depost = scenario.get("deposit", {})
-        self.contributions = self.depost.get("monthly", 0)
+        self.contributions_config = scenario.get("contributions", [])
 
         self.allocation_strategy = allocation_strategy
 
-        self.valuation_date = pd.Timestamp.today()
+        self.valuation_date = pd.Timestamp.today().normalize()
 
         self.liabilities: List[Liability] = []
         self.required_buckets:List[RequiredBucket] = []
@@ -37,6 +36,7 @@ class LDIModel:
     def _run(self):
 
         self._generate_liabilities()
+        self._generate_contributions()
 
         self._generate_required_buckets()
         self._rebalance_surplus()
@@ -72,6 +72,53 @@ class LDIModel:
         self.present_value = sum([liability.present_value() for liability in self.liabilities])
         self.current_funding_ratio = self.current_balance / self.present_value   
     
+    def _generate_contributions(self) -> pd.Series:
+
+        date_index = pd.date_range(
+            start=self.valuation_date + pd.offsets.MonthBegin(1),         
+            end=max([liability.maturity_date for liability in self.liabilities]),
+            freq="MS"
+        )
+        ts = pd.Series(0.0, index=date_index)
+
+        for c in self.contributions_config:
+            ctype = c["type"]
+
+            if ctype == "recurring":
+
+                amount = float(c["amount"])
+                freq = c.get("frequency", "monthly")
+
+                start = pd.to_datetime(c.get("start_date", date_index[0]))
+                end = pd.to_datetime(c.get("end_date", date_index[-1]))
+
+                if freq == "monthly":
+                    mask = (ts.index >= start) & (ts.index <= end)
+                    ts.loc[mask] += amount
+
+                elif freq == "annual":
+                    month = int(c.get("month", 1))
+                    mask = (
+                        (ts.index >= start)
+                        & (ts.index <= end)
+                        & (ts.index.month == month)
+                    )
+                    ts.loc[mask] += amount
+
+                else:
+                    raise ValueError(f"Unsupported frequency: {freq}")
+
+            elif ctype == "one_time":
+                date = pd.to_datetime(c["date"])
+                if date not in ts.index:
+                    raise ValueError(f"One-time contribution date {date} not in timeline")
+                ts.loc[date] += float(c["amount"])
+
+            else:
+                raise ValueError(f"Unknown contribution type: {ctype}")
+
+        self.contributions = ts
+
     def _generate_required_buckets(self):
 
         contributions_per_bucket = self.contributions / len(self.liabilities)
@@ -148,29 +195,6 @@ class LDIModel:
             asset: value / denominator
             for asset, value in numerators.items()
         }
-
-
-    # def _calculate_current_asset_allocations(self):
-
-    #     equity_numerator = 0
-    #     fixed_income_numerator = 0
-    #     denominator = 0 
-
-    #     if self.current_balance == 0:
-
-    #         for bucket in self.required_buckets:
-    #             equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_liability().present_value()
-    #             fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_liability().present_value()
-    #         denominator = self.present_value
-
-    #     else:
-    #         for bucket in [*self.required_buckets, self.surplus_bucket]:
-    #             equity_numerator += bucket.get_equity_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
-    #             fixed_income_numerator += bucket.get_fixed_income_allocation_by_period(0) * bucket.get_asset_balance_by_period(0)
-    #         denominator = self.current_balance
-
-    #     self.current_equity_allocation = equity_numerator / denominator
-    #     self.current_fixed_income_allocation = fixed_income_numerator / denominator
 
     def result(self):
 

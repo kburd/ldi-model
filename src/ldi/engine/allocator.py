@@ -31,9 +31,8 @@ class GlidePath(AllocationStrategy):
         base_hedge = GlidePath.FUNDING_HEDGE_WEIGHT * funding_hedge + GlidePath.TIME_HEDGE_WEIGHT * time_hedge
     
         return {
-            "us_equity_total_market": 0.7 * (1 - base_hedge),
-            "intl_equity_developed": 0.3 * (1 - base_hedge),
-            "us_nominal_treasury_long": 0.8 * base_hedge,
-            "us_tips_long": 0.2 * base_hedge,
+            "us_equity_total_market": 0.8 * (1 - base_hedge),
+            "intl_equity_developed": 0.2 * (1 - base_hedge),
+            "us_nominal_treasury_long": base_hedge,
         }
 

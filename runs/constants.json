@@ -1,6 +1,4 @@
 {
-  "tuition.inflation": 0.048,
-  "tuition.amount": 17328,
-
-  "retirement.income": 100000
+  "retirement.income": 100000,
+  "retirement.date": "2046-07-01"
 }

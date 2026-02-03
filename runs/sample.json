@@ -1,12 +1,38 @@
 {
-    "name": "Retirement",
+    "name": "Sample",
     "assets_today": 100000,
     "liabilities": [
         {
             "type": "recurring",
             "amount_today": "${retirement.income}",
-            "start_date": "2060-01-01",
+            "start_date": "${retirement.date}",
             "duration_years": 30
+        },
+        {
+            "type": "one-time",
+            "amount_today": 177700,
+            "start_date": "${retirement.date}"
+        }
+    ],
+    "contributions": [
+        {
+            "type": "recurring",
+            "amount": 100,
+            "frequency": "monthly",
+            "start_date": "2025-01-01",
+            "end_date": "${retirement.date}"
+        },
+        {
+            "type": "recurring",
+            "amount": 5000,
+            "frequency": "annual",
+            "month": 1,
+            "end_date": "${retirement.date}"
+        },
+        {
+            "type": "one_time",
+            "amount": 20000,
+            "date": "2030-06-01"
         }
     ]
 }
