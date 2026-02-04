@@ -24,8 +24,10 @@ def run_scenario(scenario_file: Path, constants_file: Path = None):
     ).result()
 
     # Shortfall / Surplus and Contribution Calculations
-    result["net_contribution_today"] = _calculate_current_balance_adjustment(assumptions, scenario)
-    result["monthly_contribution"] = 0 if result["surplus_at_maturity"] > 0 else _calculate_monthly_contribution_adjustment(assumptions, scenario)
+    surplus_at_maturity = result["surplus_at_maturity"]
+    result["net_contribution_today"] = _calculate_current_balance_adjustment(assumptions, scenario, surplus_at_maturity)
+    result["monthly_contribution"] = _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at_maturity)
+
 
     return result
 
@@ -70,92 +72,77 @@ def _resolve_refs(obj: Any, constants: Dict[str, Any]) -> Any:
 
     return obj
 
-def _calculate_current_balance_adjustment(assumptions, scenario):
+def _calculate_current_balance_adjustment(assumptions, scenario, surplus_at_maturity):
 
     scenario_copy = copy.deepcopy(scenario)
 
-    liability_config = scenario["liabilities"][0]
-
-    start = pd.Timestamp(liability_config["start_date"])
-    duration_years = liability_config.get("duration_years", 1)
-    amount_today = liability_config["amount_today"]
-    inflation = liability_config.get("inflation", assumptions.inflation_cpi)
-
-    maturity = start + pd.DateOffset(years=duration_years)
-    first_cashflow = pd.Timestamp.today() + pd.offsets.MonthBegin(1)
-
-    horizon = (
-        (maturity.year - first_cashflow.year)
-        + (maturity.month - first_cashflow.month) / 12
-    )
-
-    upper = len(scenario["liabilities"]) * amount_today * duration_years * (1 + inflation) ** horizon
+    upper = scenario_copy["assets_today"] if surplus_at_maturity > 0 else -surplus_at_maturity
     lower = 0
 
     for idx in range(MAX_ITERATIONS):
 
         middle = (lower + upper) / 2
-        scenario_copy["assets_today"] = middle
 
+        scenario_copy["assets_today"] = middle
+        scenario_copy["contributions"] = []
 
         result = LDIModel(
             assumptions=assumptions,
             scenario=scenario_copy,
             allocation_strategy=GlidePath
         ).result()
-        
-        if result["surplus_at_maturity"] <= 0:
-            lower = middle
+
+        if abs(result["surplus_at_maturity"]) <= TOLERANCE:
+            break
         elif result["surplus_at_maturity"] > TOLERANCE:
             upper = middle
         else:
-            break
+            lower = middle
 
-    return middle - scenario["assets_today"]  
+    return middle - scenario["assets_today"]
 
-def _calculate_monthly_contribution_adjustment(assumptions, scenario):
-
-    if "deposit" not in scenario:
-        scenario["deposit"] = {
-            "monthly": 0
-        }
-
-    scenario_copy = copy.deepcopy(scenario)
+def _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at_maturity):
 
     liability_config = scenario["liabilities"][0]
-
     start = pd.Timestamp(liability_config["start_date"])
     window = liability_config.get("duration_years", 1)
-    amount_today = liability_config["amount_today"]
-    inflation = liability_config.get("inflation", assumptions.inflation_cpi)
 
     maturity = start + pd.DateOffset(years=window)
     first_cashflow = pd.Timestamp.today() + pd.offsets.MonthBegin(1)
-
     horizon = (
-        (maturity.year - first_cashflow.year)
-        + (maturity.month - first_cashflow.month) / 12
+        12 * (maturity.year - first_cashflow.year) + (maturity.month - first_cashflow.month)
     )
 
-    upper = (len(scenario["liabilities"]) * amount_today * window * (1 + inflation) ** horizon) / horizon
-    lower = 0
+    upper = 10 * max(-surplus_at_maturity / horizon, 0)
+    lower = 10 * min(-surplus_at_maturity / horizon, 0)
 
     for idx in range(MAX_ITERATIONS):
 
+        scenario_copy = copy.deepcopy(scenario)
         middle = (lower + upper) / 2
-        scenario_copy["deposit"]["monthly"] = middle
+        
+        if "contributions" not in scenario_copy:
+            scenario_copy["contributions"] = []
 
+        scenario_copy["contributions"].append({
+            "type": "recurring",
+            "amount": middle,
+            "frequency": "monthly",
+            "start_date": pd.Timestamp.today(),
+            "end_date": start - pd.DateOffset(months=1)
+        })
+        
         result = LDIModel(
             assumptions=assumptions,
             scenario=scenario_copy,
             allocation_strategy=GlidePath
         ).result()
         
-        if result["surplus_at_maturity"] <= 0:
-            lower = middle
+        if abs(result["surplus_at_maturity"]) <= TOLERANCE:
+            break
         elif result["surplus_at_maturity"] > TOLERANCE:
             upper = middle
         else:
-            break
+            lower = middle
 
-    return middle - scenario["deposit"]["monthly"] 
+    return middle
