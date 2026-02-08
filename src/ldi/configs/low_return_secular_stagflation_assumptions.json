@@ -1,0 +1,11 @@
+{
+  "inflation_cpi": 0.02,
+  "discount_rate": 0.025,
+  "assets": {
+    "us_equity_total_market": 0.05,
+    "intl_equity_developed": 0.045,
+    "us_nominal_treasury_long": 0.025,
+    "us_tips_long": 0.02,
+    "cash_equivalent": 0.02
+  }
+}

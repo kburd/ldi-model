@@ -10,21 +10,16 @@ from ldi.engine.allocator import AllocationStrategy
 
 class LDIModel:
 
-    def __init__(self, *, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
+    def __init__(self, *, name: str, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
+
+        self.name = name or scenario["name"]
+        self.current_balance = scenario.get("assets_today", 0)
+        self.liabilities_config = scenario.get("liabilities", [])
+        self.contributions_config = scenario.get("contributions", [])
+        self.end_date = scenario.get("end_date")
 
         self.assumptions = assumptions
-
-        for key in ["name", "assets_today", "liabilities"]:
-            if key not in scenario:
-                raise ValueError(F"Missing '{key}' in scenario")
-
-        self.name = scenario["name"]
-        self.current_balance = scenario["assets_today"]
-        self.liabilities_config = scenario["liabilities"]
-        self.contributions_config = scenario.get("contributions", [])
-
         self.allocation_strategy = allocation_strategy
-
         self.valuation_date = pd.Timestamp.today().normalize()
 
         self.liabilities: List[Liability] = []
@@ -33,9 +28,19 @@ class LDIModel:
 
         self._run()
 
+    def _validate_parameters(self, name: str, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
+
+        for key in ["assets_today"]:
+            if key not in scenario:
+                raise ValueError(F"Missing '{key}' in scenario")
+            
+        if "liabilities" not in scenario and "end_date" not in scenario:
+            raise ValueError(F"End Date must be present in scenario if no Liabilities are provided")
+
     def _run(self):
 
         self._generate_liabilities()
+        self._calculate_end_date()
         self._generate_contributions()
 
         self._generate_required_buckets()
@@ -50,7 +55,6 @@ class LDIModel:
 
             first_withdrawal = datetime.strptime(liability_config["start_date"], "%Y-%m-%d").date()
             withdrawal_amount = liability_config["amount_today"]
-            inflation_rate = liability_config.get("inflation_rate", self.assumptions.inflation_cpi)
 
             if liability_config["type"] == "recurring":
                 duration_years = liability_config["duration_years"]
@@ -64,19 +68,23 @@ class LDIModel:
                     amount=withdrawal_amount,
                     valuation_date=self.valuation_date,
                     maturity_date=pd.Timestamp(first_withdrawal + relativedelta(years=i)),
-                    inflation_rate=inflation_rate,
-                    discount_rate=self.assumptions.discount_rate
+                    assumptions=self.assumptions
                 )
                 self.liabilities.append(liability)
 
         self.present_value = sum([liability.present_value() for liability in self.liabilities])
-        self.current_funding_ratio = self.current_balance / self.present_value   
+        self.current_funding_ratio = self.current_balance / self.present_value if self.present_value != 0 else None
     
+    def _calculate_end_date(self):
+
+        if self.end_date is None and len(self.liabilities) > 0:
+            self.end_date = max([liability.maturity_date for liability in self.liabilities])
+
     def _generate_contributions(self) -> pd.Series:
 
         date_index = pd.date_range(
             start=self.valuation_date + pd.offsets.MonthBegin(1),         
-            end=max([liability.maturity_date for liability in self.liabilities]),
+            end=self.end_date,
             freq="MS"
         )
         ts = pd.Series(0.0, index=date_index)
@@ -141,19 +149,23 @@ class LDIModel:
     def _rebalance_surplus(self):
 
         surplus_capital  = max(0, self.current_balance - self.present_value)
-        surplus_series = pd.concat(
-            [bucket.get_surplus_series() for bucket in self.required_buckets],
-            axis=1
-        ).fillna(0)
+
+        if len(self.required_buckets) == 0:
+            contributions = 0
+        else:
+            contributions = pd.concat(
+                [bucket.get_surplus_series() for bucket in self.required_buckets],
+                axis=1
+            ).fillna(0).sum(axis=1)
 
         self.surplus_bucket = SurplusBucket(
             name="surplus",
             amount=surplus_capital,
-            horizon_months=max([liability.horizon() for liability in self.liabilities]),
             valuation_date=self.valuation_date,
+            end_date=self.end_date,
             assumptions=self.assumptions,
             allocation_strategy=self.allocation_strategy,
-            contributions=surplus_series.sum(axis=1)
+            contributions=contributions
         )
 
     def _calculate_funded_status(self):

@@ -6,19 +6,19 @@ import pandas as pd
 from ldi.engine.allocator import GlidePath
 
 from ldi.engine.model import LDIModel
-from ldi.engine.assumptions import load_assumptions_from_path
+from ldi.engine.assumptions import Assumptions
 
 MAX_ITERATIONS = 40
 TOLERANCE = 100
 
-def run_scenario(scenario_file: Path, constants_file: Path = None):
+def run_scenario(scenario_file: Path, constants_file: Path = None, assumptions_file: Path = None):
     
     scenario = _load_scenario(scenario_file, constants_file)
-    assumptions = load_assumptions_from_path()
 
     # Base Line
     result = LDIModel(
-        assumptions=assumptions, 
+        name=assumptions_file.split(".")[0],
+        assumptions=Assumptions.from_file(assumptions_file), 
         scenario=scenario,
         allocation_strategy=GlidePath,
     ).result()

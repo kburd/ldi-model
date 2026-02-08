@@ -1,0 +1,16 @@
+{
+  "inflation_cpi": {
+    "default": 0.03,
+    "schedule": [
+      {"start": "2028-01-01", "end": "2038-12-31", "value": 0.07}
+    ]
+  },
+  "discount_rate": 0.06,
+  "assets": {
+    "us_equity_total_market": 0.04,
+    "intl_equity_developed": 0.035,
+    "us_nominal_treasury_long": 0.055,
+    "us_tips_long": 0.05,
+    "cash_equivalent": 0.05
+  }
+}

@@ -13,22 +13,16 @@ class Liability:
         amount: float,
         valuation_date: pd.Timestamp,
         maturity_date: pd.Timestamp,
-        inflation_rate: float,
-        discount_rate: float,
+        assumptions: Assumptions,
     ):
         self.amount = amount
         self.valuation_date = valuation_date
         self.maturity_date = maturity_date
-        self.inflation_rate = inflation_rate
-        self.discount_rate = discount_rate
+        self.assumptions = assumptions
 
         self._build()
 
     def _build(self):
-
-        infl_m = self._to_monthly(self.inflation_rate)
-        disc_m = self._to_monthly(self.discount_rate)
-        real_disc = (1 + infl_m) / (1 + disc_m) - 1
 
         dates = pd.date_range(
             start=self.valuation_date + pd.offsets.MonthBegin(1), 
@@ -37,10 +31,18 @@ class Liability:
         )
         horizon = 12 * (self.maturity_date.year - dates.year) + (self.maturity_date.month - dates.month)
 
+        rd = pd.Series([
+            (1 + self._to_monthly(self.assumptions.inflation_cpi(d))) /
+            (1 + self._to_monthly(self.assumptions.discount_rate(d))) - 1
+            for d in dates
+        ], index=dates)
+
+        discount_factors = rd[::-1].add(1).cumprod()[::-1]
+        discount_factors = discount_factors.shift(-1, fill_value=1.0)
+
         self.df = pd.DataFrame({
-            "date": dates,
             "horizon": horizon,
-            "pv_remaining": self.amount * (1 + real_disc) ** horizon,
+            "pv_remaining": self.amount * discount_factors
         })
 
     def _to_monthly(self, annual_rate):
@@ -93,16 +95,12 @@ class BaseBucket:
             if not isinstance(ts.index, pd.DatetimeIndex):
                 raise TypeError("Contribution series must be datetime-indexed")
 
-            # collapse both sides to month starts
-            bucket_months = self.df["date"].dt.to_period("M")
-            contrib_months = ts.index.to_period("M")
-
-            ts.index = contrib_months
-
+            bucket_months = self.df.index.to_period("M")
+            ts.index = ts.index.to_period("M")
             aligned = ts.reindex(bucket_months)
 
             if aligned.isna().any():
-                missing = self.df.loc[aligned.isna(), "date"]
+                missing = self.df.index[aligned.isna()]
                 raise ValueError(
                     f"Missing contributions for months: {missing.dt.strftime('%Y-%m').tolist()}"
                 )
@@ -114,16 +112,15 @@ class BaseBucket:
 
     def _build(self):
 
-        infl_m = self._to_monthly(self.assumptions.inflation_cpi)
-
         assets_today = self.amount 
 
         rows = []
 
-        for t in range(len(self.df)):
+        for d in self.df.index:
 
-            liability = self.df.at[t, "pv_remaining"]
-            horizon = self.df.at[t, "horizon"]
+            liability = self.df.at[d, "pv_remaining"]
+            horizon = self.df.at[d, "horizon"]
+            infl_m = self._to_monthly(self.assumptions.inflation_cpi(d))
             funding_ratio = assets_today / liability if liability > 0 else None
             
             allocations = self.allocation_strategy.get_allocation({
@@ -133,7 +130,7 @@ class BaseBucket:
 
             expected_return = 0.0
             for asset, weight in allocations.items():
-                nominal_m = self._to_monthly(self.assumptions.assets[asset])
+                nominal_m = self._to_monthly(self.assumptions.asset_returns(d)[asset])
                 real_m = (1 + nominal_m) / (1 + infl_m) - 1
                 expected_return += weight * real_m
 
@@ -144,7 +141,7 @@ class BaseBucket:
                 surplus = 0
 
             rows.append({
-                "t": t,
+                "date": d,
                 "asset_balance": assets_today,
                 "funding_ratio": funding_ratio,
                 "allocations": allocations,
@@ -153,9 +150,9 @@ class BaseBucket:
             })
 
             assets_today *= (1 + expected_return)
-            assets_today += self.contributions_ts.iloc[t]
+            assets_today += self.contributions_ts.at[d]
 
-        proj_df = pd.DataFrame(rows).set_index("t")
+        proj_df = pd.DataFrame(rows).set_index("date")
         self.df = self.df.join(proj_df)
         
     def _to_monthly(self, annual_rate):
@@ -171,8 +168,7 @@ class BaseBucket:
         return self._get_column_by_period("allocations", period)
     
     def get_surplus_series(self):
-        s = self.df.set_index("date")["surplus"]
-        return s.rename(self.name)
+        return self.df["surplus"].rename(self.name)
 
 class SurplusBucket(BaseBucket):
 
@@ -180,8 +176,8 @@ class SurplusBucket(BaseBucket):
         self,
         name: str,
         amount: float,
-        horizon_months: int,
         valuation_date: pd.Timestamp,
+        end_date: pd.Timestamp,
         assumptions: Assumptions,
         allocation_strategy: AllocationStrategy,
         contributions: Union[float, pd.Series] = 0.0,
@@ -189,15 +185,14 @@ class SurplusBucket(BaseBucket):
 
         dates = pd.date_range(
             start=valuation_date + pd.offsets.MonthBegin(1),
-            periods=horizon_months,
+            end=end_date,
             freq="MS"
         )
 
         df = pd.DataFrame({
-            "date": dates,
             "horizon": np.inf,
-            "pv_remaining": 0.0,   
-        })
+            "pv_remaining": 0.0,
+        }, index=pd.Index(dates, name="date"))
 
         super().__init__(
             name=name,

@@ -1,0 +1,16 @@
+{
+  "inflation_cpi": {
+    "default": 0.03,
+    "schedule": [
+      {"start": "2027-01-01", "end": "2042-12-31", "value": 0.06}
+    ]
+  },
+  "discount_rate": 0.055,
+  "assets": {
+    "us_equity_total_market": 0.075,
+    "intl_equity_developed": 0.065,
+    "us_nominal_treasury_long": 0.055,
+    "us_tips_long": 0.045,
+    "cash_equivalent": 0.05
+  }
+}

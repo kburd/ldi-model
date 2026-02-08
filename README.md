@@ -107,11 +107,11 @@ python -m ldi.cli run \
 
 ## Future Work
 - add unit tests
-- Allow for multiple contribution configs
-- Dynamic returns
-- allow for surplus only accounts i.e. no liability
+- fix liability specific inflation
+- fix contributions should only go to underfunded accounts
+- tax considerations
 - allow configurable allocation
-- tax considerations?
+
 
 ## License
 
