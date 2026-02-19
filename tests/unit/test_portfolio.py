@@ -37,9 +37,11 @@ def test_liability_builds_monthly_projection():
         discount_rate=0.0,
     )
 
-    assert len(liability.df) == 3
+    assert len(liability.df) == 4
+    assert liability.df.index[0] == pd.Timestamp("2025-01-01")
+    assert liability.df.index[-1] == pd.Timestamp("2025-04-01")
     assert liability.get_pv_remaining_by_period(0) == pytest.approx(1200.0)
-    assert liability.horizon() == 2
+    assert liability.horizon() == 3
 
 
 def test_required_bucket_normalizes_scalar_contributions():
