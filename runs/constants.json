@@ -1,4 +1,6 @@
 {
+  "discount.rate": 0.0344,
+
   "retirement.income": 100000,
   "retirement.date": "2046-07-01"
 }

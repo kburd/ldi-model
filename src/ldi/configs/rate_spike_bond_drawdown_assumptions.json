@@ -1,11 +1,5 @@
 {
   "inflation_cpi": 0.035,
-  "discount_rate": {
-    "default": 0.0344,
-    "schedule": [
-      {"start": "2027-01-01", "end": "2031-12-31", "value": 0.065}
-    ]
-  },
   "assets": {
     "us_equity_total_market": 0.075,
     "intl_equity_developed": 0.065,

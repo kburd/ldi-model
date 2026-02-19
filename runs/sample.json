@@ -6,11 +6,13 @@
             "type": "recurring",
             "amount_today": "${retirement.income}",
             "start_date": "${retirement.date}",
+            "discount_rate": "${discount.rate}",
             "duration_years": 30
         },
         {
             "type": "one-time",
             "amount_today": 177700,
+            "discount_rate": "${discount.rate}",
             "start_date": "${retirement.date}"
         }
     ],

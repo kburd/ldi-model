@@ -14,40 +14,37 @@ TOLERANCE = 100
 def run_scenario(scenario_file: Path, constants_file: Path = None, assumptions_file: Path = None):
     
     scenario = _load_scenario(scenario_file, constants_file)
+    assumptions = Assumptions.from_file(assumptions_file)
 
-    # Base Line
+    # Baseline
     result = LDIModel(
-        name=assumptions_file.split(".")[0],
-        assumptions=Assumptions.from_file(assumptions_file), 
+        assumptions=assumptions, 
         scenario=scenario,
         allocation_strategy=GlidePath,
     ).result()
 
     # Shortfall / Surplus and Contribution Calculations
     surplus_at_maturity = result["surplus_at_maturity"]
-    result["net_contribution_today"] = _calculate_current_balance_adjustment(assumptions, scenario, surplus_at_maturity)
-    result["monthly_contribution"] = _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at_maturity)
+    if scenario.get("liabilities", []) != []:
+        result["net_contribution_today"] = _calculate_current_balance_adjustment(assumptions, scenario, surplus_at_maturity)
+        result["monthly_contribution"] = _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at_maturity)
 
 
     return result
 
 def _load_scenario(scenario_file: Path, constants_file: Path):
 
-    # Load scenario JSON
     with open(scenario_file, "r") as f:
         scenario = json.load(f)
 
-    # Load constants if provided
     if constants_file is not None and constants_file.exists():
         with open(constants_file, "r") as f:
             constants = json.load(f)
     else:
         constants = {}
 
-    # Recursively resolve constants in the scenario
     scenario = _resolve_refs(scenario, constants)
 
-    # Now scenario is fully populated and ready to pass to the model
     return scenario
 
 def _resolve_refs(obj: Any, constants: Dict[str, Any]) -> Any:
@@ -103,18 +100,13 @@ def _calculate_current_balance_adjustment(assumptions, scenario, surplus_at_matu
 
 def _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at_maturity):
 
-    liability_config = scenario["liabilities"][0]
-    start = pd.Timestamp(liability_config["start_date"])
-    window = liability_config.get("duration_years", 1)
+    end_date = scenario.get("end_date")
+    if end_date == None:
+        liability_config = scenario["liabilities"][0]  
+        end_date = pd.Timestamp(liability_config["start_date"]) - pd.DateOffset(months=1)
 
-    maturity = start + pd.DateOffset(years=window)
-    first_cashflow = pd.Timestamp.today() + pd.offsets.MonthBegin(1)
-    horizon = (
-        12 * (maturity.year - first_cashflow.year) + (maturity.month - first_cashflow.month)
-    )
-
-    upper = 10 * max(-surplus_at_maturity / horizon, 0)
-    lower = 10 * min(-surplus_at_maturity / horizon, 0)
+    upper = max(-surplus_at_maturity, 0)
+    lower = min(-surplus_at_maturity, 0)
 
     for idx in range(MAX_ITERATIONS):
 
@@ -129,7 +121,7 @@ def _calculate_monthly_contribution_adjustment(assumptions, scenario, surplus_at
             "amount": middle,
             "frequency": "monthly",
             "start_date": pd.Timestamp.today(),
-            "end_date": start - pd.DateOffset(months=1)
+            "end_date": end_date
         })
         
         result = LDIModel(

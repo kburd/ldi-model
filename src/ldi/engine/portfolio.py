@@ -13,16 +13,22 @@ class Liability:
         amount: float,
         valuation_date: pd.Timestamp,
         maturity_date: pd.Timestamp,
-        assumptions: Assumptions,
+        inflation_rate: float,
+        discount_rate: float
     ):
         self.amount = amount
         self.valuation_date = valuation_date
         self.maturity_date = maturity_date
-        self.assumptions = assumptions
+        self.inflation_rate = inflation_rate
+        self.discount_rate = discount_rate
 
         self._build()
 
     def _build(self):
+
+        infl_m = self._to_monthly(self.inflation_rate)
+        disc_m = self._to_monthly(self.discount_rate)
+        real_disc_m = (1 + disc_m) / (1 + infl_m) - 1
 
         dates = pd.date_range(
             start=self.valuation_date + pd.offsets.MonthBegin(1), 
@@ -31,25 +37,16 @@ class Liability:
         )
         horizon = 12 * (self.maturity_date.year - dates.year) + (self.maturity_date.month - dates.month)
 
-        rd = pd.Series([
-            (1 + self._to_monthly(self.assumptions.inflation_cpi(d))) /
-            (1 + self._to_monthly(self.assumptions.discount_rate(d))) - 1
-            for d in dates
-        ], index=dates)
-
-        discount_factors = rd[::-1].add(1).cumprod()[::-1]
-        discount_factors = discount_factors.shift(-1, fill_value=1.0)
-
         self.df = pd.DataFrame({
             "horizon": horizon,
-            "pv_remaining": self.amount * discount_factors
-        })
+            "pv_remaining": self.amount / (1 + real_disc_m) ** horizon,
+        }, index=dates)
 
     def _to_monthly(self, annual_rate):
         return (1 + annual_rate) ** (1/12) - 1
 
-    def present_value(self) -> float:
-        return self.df["pv_remaining"].iloc[0]
+    def get_pv_remaining_by_period(self, i) -> float:
+        return self.df["pv_remaining"].iloc[i]
     
     def horizon(self):
         return self.df["horizon"].iloc[0]
@@ -75,7 +72,6 @@ class BaseBucket:
         self.allow_surplus = allow_surplus
 
         self.df = df.copy(deep=True)
-
         self.contributions_ts = self._normalize_contributions(contributions)
         
         self._build()
@@ -118,10 +114,10 @@ class BaseBucket:
 
         for d in self.df.index:
 
-            liability = self.df.at[d, "pv_remaining"]
+            pv_remaining = self.df.at[d, "pv_remaining"]
             horizon = self.df.at[d, "horizon"]
             infl_m = self._to_monthly(self.assumptions.inflation_cpi(d))
-            funding_ratio = assets_today / liability if liability > 0 else None
+            funding_ratio = assets_today / pv_remaining if pv_remaining > 0 else None
             
             allocations = self.allocation_strategy.get_allocation({
                 "horizon_months": horizon,
@@ -135,7 +131,7 @@ class BaseBucket:
                 expected_return += weight * real_m
 
             if self.allow_surplus:
-                surplus = max(0, assets_today - liability)
+                surplus = max(0, assets_today - pv_remaining)
                 assets_today -= surplus
             else:
                 surplus = 0
@@ -228,13 +224,8 @@ class RequiredBucket(BaseBucket):
 
         self.liability = liability
 
-        self.df["shortfall"] = (self.df["pv_remaining"] - self.df["asset_balance"]).clip(lower=0)
-
     def get_liability(self):
         return self.liability
 
-    def get_shortfall_by_period(self, period):
-        return self.df["shortfall"].iloc[period]
-    
     def get_horizon(self):
         return self.df["horizon"].iloc[0]

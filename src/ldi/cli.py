@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 from ldi.app.runner import run_scenario
 
-app = typer.Typer(help="LDI Monte Carlo runner CLI")
+app = typer.Typer(help="LDI runner CLI")
 
 import pandas as pd
 
@@ -36,6 +36,8 @@ def _build_result_dfs(results):
     return summary_df, allocation_df
 
 def _format_dollars(x):
+    if pd.isna(x):
+        return "" 
     return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
 
 def _display_results(results):
@@ -98,7 +100,7 @@ def run(
     results = []
     for fpath in scenario_files:
         typer.echo(f"Running scenario: {fpath}")
-        result = run_scenario(fpath, constants_file=constants_file)
+        result = run_scenario(fpath, constants_file=constants_file, assumptions_file="base_assumptions.json")
         results.append(result)
     
     _display_results(results)

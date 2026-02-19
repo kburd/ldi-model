@@ -1,6 +1,5 @@
 {
   "inflation_cpi": 0.03,
-  "discount_rate": 0.0344,
   "assets": {
     "us_equity_total_market": {
       "default": 0.08,

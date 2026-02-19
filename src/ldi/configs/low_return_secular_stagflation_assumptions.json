@@ -1,6 +1,5 @@
 {
   "inflation_cpi": 0.02,
-  "discount_rate": 0.025,
   "assets": {
     "us_equity_total_market": 0.05,
     "intl_equity_developed": 0.045,

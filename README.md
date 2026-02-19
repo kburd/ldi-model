@@ -107,11 +107,8 @@ python -m ldi.cli run \
 
 ## Future Work
 - add unit tests
-- fix liability specific inflation
-- fix contributions should only go to underfunded accounts
 - tax considerations
 - allow configurable allocation
-
 
 ## License
 

@@ -13,9 +13,6 @@ class Assumptions:
     _infl_default: float
     _infl_schedule: Schedule
 
-    _disc_default: float
-    _disc_schedule: Schedule
-
     _asset_defaults: Dict[str, float]
     _asset_schedules: Dict[str, Schedule]
 
@@ -61,7 +58,6 @@ class Assumptions:
     def from_dict(cls, data: Dict[str, Any]) -> "Assumptions":
 
         infl_default, infl_sched = cls._parse_field(data["inflation_cpi"])
-        disc_default, disc_sched = cls._parse_field(data["discount_rate"])
 
         asset_defaults = {}
         asset_schedules = {}
@@ -74,8 +70,6 @@ class Assumptions:
         return cls(
             _infl_default=infl_default,
             _infl_schedule=infl_sched,
-            _disc_default=disc_default,
-            _disc_schedule=disc_sched,
             _asset_defaults=asset_defaults,
             _asset_schedules=asset_schedules,
         )
