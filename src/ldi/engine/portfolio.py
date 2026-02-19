@@ -31,7 +31,7 @@ class Liability:
         real_disc_m = (1 + disc_m) / (1 + infl_m) - 1
 
         dates = pd.date_range(
-            start=self.valuation_date + pd.offsets.MonthBegin(1), 
+            start=pd.offsets.MonthBegin().rollforward(self.valuation_date), 
             end=self.maturity_date, 
             freq="MS"
         )
@@ -98,7 +98,7 @@ class BaseBucket:
             if aligned.isna().any():
                 missing = self.df.index[aligned.isna()]
                 raise ValueError(
-                    f"Missing contributions for months: {missing.dt.strftime('%Y-%m').tolist()}"
+                    f"Missing contributions for months: {missing.strftime('%Y-%m').tolist()}"
                 )
 
             aligned.index = self.df.index
