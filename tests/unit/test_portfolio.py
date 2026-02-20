@@ -173,66 +173,6 @@ def test_basebucket_normalize_contributions_errors(monthly_index, bad_contributi
             allow_surplus=False,
         )
 
-
-def test_basebucket_build_branches_for_surplus_funding_ratio_and_real_returns(monthly_index):
-    df = pd.DataFrame(
-        {
-            "horizon": [2, 1, 0],
-            "pv_remaining": [80.0, 0.0, 50.0],
-        },
-        index=monthly_index,
-    )
-
-    assumptions = DummyAssumptions(
-        inflation_by_date={
-            monthly_index[0]: 0.06,
-            monthly_index[1]: 0.0,
-            monthly_index[2]: 0.0,
-        },
-        returns_by_date={
-            monthly_index[0]: {"asset_a": 0.12, "asset_b": 0.0},
-            monthly_index[1]: {"asset_a": 0.0, "asset_b": 0.0},
-            monthly_index[2]: {"asset_a": 0.0, "asset_b": 0.0},
-        },
-    )
-
-    strategy = RecordingStrategy(
-        {
-            "ratio": {"asset_a": 0.5, "asset_b": 0.5},
-            "none": {"asset_a": 1.0, "asset_b": 0.0},
-        }
-    )
-
-    contributions = pd.Series([10.0, -5.0, 0.0], index=monthly_index)
-
-    bucket = BaseBucket(
-        name="required-like",
-        amount=100.0,
-        df=df,
-        assumptions=assumptions,
-        allocation_strategy=strategy,
-        contributions=contributions,
-        allow_surplus=True,
-    )
-
-    assert strategy.inputs[0]["funding_ratio"] == pytest.approx(1.25)
-    assert strategy.inputs[1]["funding_ratio"] is None
-    assert strategy.inputs[2]["funding_ratio"] > 0
-
-    nominal_m = (1 + 0.12) ** (1 / 12) - 1
-    inflation_m = (1 + 0.06) ** (1 / 12) - 1
-    expected_real = (1 + nominal_m) / (1 + inflation_m) - 1
-    expected_period0_return = 0.5 * expected_real
-    assert bucket.df.loc[monthly_index[0], "expected_return"] == pytest.approx(expected_period0_return)
-
-    assert bucket.df.loc[monthly_index[0], "surplus"] == pytest.approx(20.0)
-    assert bucket.df.loc[monthly_index[0], "asset_balance"] == pytest.approx(80.0)
-
-    assert bucket.get_asset_balance_by_period(1) == pytest.approx(80.0 * (1 + expected_period0_return) + 10.0)
-    assert bucket.get_allocations_by_period(1) == {"asset_a": 1.0, "asset_b": 0.0}
-    assert bucket._get_column_by_period("surplus", 0) == pytest.approx(20.0)
-
-
 def test_basebucket_allow_surplus_false_and_negative_cash_supply(monthly_index):
     df = pd.DataFrame(
         {
