@@ -32,3 +32,20 @@ def test_glide_path_handles_missing_funding_ratio():
 
     assert allocation["us_nominal_treasury_long"] >= 0
     assert sum(allocation.values()) == pytest.approx(1.0)
+
+
+def test_glide_path_name_is_stable():
+    assert GlidePath.name() == "Glide Path"
+
+
+def test_glide_path_clamps_hedge_at_extremes():
+    full_hedge = GlidePath.get_allocation({"horizon_months": 0, "funding_ratio": 2.0})
+    no_hedge = GlidePath.get_allocation({"horizon_months": 500, "funding_ratio": -1.0})
+
+    assert full_hedge["us_nominal_treasury_long"] == pytest.approx(1.0)
+    assert full_hedge["us_equity_total_market"] == pytest.approx(0.0)
+    assert full_hedge["intl_equity_developed"] == pytest.approx(0.0)
+
+    assert no_hedge["us_nominal_treasury_long"] == pytest.approx(0.0)
+    assert no_hedge["us_equity_total_market"] == pytest.approx(0.8)
+    assert no_hedge["intl_equity_developed"] == pytest.approx(0.2)

@@ -46,3 +46,23 @@ def test_from_file_loads_base_assumptions():
 
     assert assumptions.inflation_cpi(pd.Timestamp("2028-01-01")) == pytest.approx(0.03)
     assert returns["us_equity_total_market"] == pytest.approx(0.08)
+
+
+def test_parse_field_accepts_numeric_values():
+    default, schedule = Assumptions._parse_field(3)
+
+    assert default == pytest.approx(3.0)
+    assert schedule == []
+
+
+def test_lookup_returns_default_when_date_not_in_schedule():
+    schedule = [
+        (pd.Timestamp("2030-01-01"), pd.Timestamp("2030-01-31"), 0.07),
+    ]
+
+    assert Assumptions._lookup(pd.Timestamp("2029-12-01"), 0.03, schedule) == pytest.approx(0.03)
+
+
+def test_from_file_raises_for_missing_file():
+    with pytest.raises(FileNotFoundError):
+        Assumptions.from_file("does_not_exist.json")

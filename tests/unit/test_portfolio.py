@@ -82,3 +82,53 @@ def test_surplus_bucket_requires_full_contribution_series_coverage():
             allocation_strategy=FixedAllocation,
             contributions=contributions,
         )
+
+
+def test_required_bucket_caps_surplus_when_assets_exceed_liability():
+    liability = Liability(
+        amount=100.0,
+        valuation_date=pd.Timestamp("2025-01-01"),
+        maturity_date=pd.Timestamp("2025-01-01"),
+        inflation_rate=0.0,
+        discount_rate=0.0,
+    )
+
+    bucket = RequiredBucket(
+        name="required",
+        amount=140.0,
+        liability=liability,
+        assumptions=_assumptions(),
+        allocation_strategy=FixedAllocation,
+        contributions=0.0,
+    )
+
+    assert bucket.get_asset_balance_by_period(0) == pytest.approx(100.0)
+    assert bucket.get_surplus_series().iloc[0] == pytest.approx(40.0)
+
+
+def test_surplus_bucket_disallows_non_datetime_contribution_series():
+    contributions = pd.Series([10.0, 20.0], index=[0, 1])
+
+    with pytest.raises(TypeError, match="datetime-indexed"):
+        SurplusBucket(
+            name="surplus",
+            amount=0.0,
+            valuation_date=pd.Timestamp("2025-01-01"),
+            end_date=pd.Timestamp("2025-03-01"),
+            assumptions=_assumptions(),
+            allocation_strategy=FixedAllocation,
+            contributions=contributions,
+        )
+
+
+def test_surplus_bucket_rejects_invalid_contribution_type():
+    with pytest.raises(TypeError, match="float or pandas Series"):
+        SurplusBucket(
+            name="surplus",
+            amount=0.0,
+            valuation_date=pd.Timestamp("2025-01-01"),
+            end_date=pd.Timestamp("2025-03-01"),
+            assumptions=_assumptions(),
+            allocation_strategy=FixedAllocation,
+            contributions=[10.0],
+        )
