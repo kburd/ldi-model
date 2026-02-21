@@ -1,0 +1,22 @@
+{
+  "allocations": {
+    "intl_equity_developed": 0.134,
+    "us_equity_total_market": 0.536,
+    "us_nominal_treasury_long": 0.33
+  },
+  "assets_today": 150000.0,
+  "bucket_balances": {
+    "0": 15600.0,
+    "1": 15420.0,
+    "2": 15240.0,
+    "3": 15060.0,
+    "4": 14880.0,
+    "5": 14700.0,
+    "6": 14520.0,
+    "7": 14340.0,
+    "surplus": 0.0
+  },
+  "funding_ratio": 0.47,
+  "name": "lost-decade",
+  "surplus_at_maturity": -130000.0
+}

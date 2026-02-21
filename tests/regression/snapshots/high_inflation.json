@@ -1,0 +1,19 @@
+{
+  "allocations": {
+    "intl_equity_developed": 0.2,
+    "us_equity_total_market": 0.8,
+    "us_nominal_treasury_long": 0.0
+  },
+  "assets_today": 100000.0,
+  "bucket_balances": {
+    "0": 14765.723,
+    "1": 15014.923,
+    "2": 15268.328,
+    "3": 15526.005,
+    "4": 15788.022,
+    "surplus": 0.0
+  },
+  "funding_ratio": 0.42,
+  "name": "high-inflation",
+  "surplus_at_maturity": -90000.0
+}

@@ -1,0 +1,15 @@
+{
+  "allocations": {
+    "intl_equity_developed": 0.051,
+    "us_equity_total_market": 0.204,
+    "us_nominal_treasury_long": 0.745
+  },
+  "assets_today": 500000.0,
+  "bucket_balances": {
+    "0": 100000.0,
+    "surplus": 430000.0
+  },
+  "funding_ratio": 5.0,
+  "name": "overfunded",
+  "surplus_at_maturity": 430000.0
+}
