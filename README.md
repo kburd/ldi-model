@@ -87,33 +87,28 @@ Allocations
 
 ## Example Scenario File
 
-```yaml
-name: Sample
-assets_today: 100000
-liabilities:
-  - type: recurring
-    amount_today: "${retirement.income}"
-    start_date: "${retirement.date}"
-    discount_rate: "${discount.rate}"
-    duration_years: 30
-  - type: one-time
-    amount_today: 177700
-    discount_rate: "${discount.rate}"
-    start_date: "${retirement.date}"
-contributions:
-  - type: recurring
-    amount: 100
-    frequency: monthly
-    start_date: "2025-01-01"
-    end_date: "${retirement.date}"
-  - type: recurring
-    amount: 5000
-    frequency: annual
-    month: 1
-    end_date: "${retirement.date}"
-  - type: one_time
-    amount: 20000
-    date: "2030-06-01"
+```json
+{
+    "name": "College Savings",
+    "assets_today": 0,
+    "liabilities": [
+        {
+            "type": "recurring",
+            "amount_today": 50000,
+            "start_date": "2045-08-01",
+            "duration_years": 4,
+            "inflation_rate": 0.05
+        }
+    ],
+    "contributions": [
+        {
+            "type": "recurring",
+            "amount": 185.00,
+            "frequency": "monthly",
+            "start_date": "2026-08-01"
+        }
+    ]
+}
 ```
 
 ## Usage
@@ -121,7 +116,7 @@ contributions:
 ### Installation
 
 ```bash
-pip install .
+pip install -r requirements.txt
 ```
 
 For development:
@@ -141,13 +136,13 @@ python -m ldi.cli --help
 Run a single scenario file:
 
 ```bash
-python -m ldi.cli run --file runs/sample.json --constants runs/constants.json
+python -m ldi.cli run --file runs/sample.json
 ```
 
 Run all scenarios in `runs/`:
 
 ```bash
-python -m ldi.cli run --all --constants runs/constants.json
+python -m ldi.cli run --all
 ```
 
 ## Feature Summary
@@ -160,8 +155,6 @@ python -m ldi.cli run --all --constants runs/constants.json
 - Contribution calibration utilities for funding-gap closure.
 - Scenario templating with constants substitution and CLI batch execution.
 
-## Non-Goals
+## Future Features
 - Monte Carlo or stochastic path simulation.
-- Tax-aware household cash-flow optimization.
-- Intramonth cash-flow timing or execution microstructure.
-- Brokerage order routing or implementation tooling.
+- Tax-aware buckets
