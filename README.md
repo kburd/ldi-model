@@ -1,116 +1,167 @@
 # LDI Model
 
-A Python library for **liability‑driven investing (LDI) modeling**.  
-This project lets you define financial goals as structured configs, simulate assets vs. liabilities over time, and compute key outputs like funding status and required contributions.
+## Overview
+LDI Model is a deterministic liability-driven investing engine for projecting whether a portfolio can meet future cash obligations. The model is designed around a liability-first workflow: define liabilities, define contribution policy, apply capital market assumptions, and evaluate funded status and required funding actions.
 
-This repository contains:
-- A core Python package implementing the LDI logic (`src/ldi`)  
-- Example and test cases (`runs/`, `tests/`)  
-- Utilities and configuration for running scenarios
+The projection framework runs in monthly steps and tracks values in real terms. Inflation assumptions (CPI) are explicitly modeled and used to convert nominal expected returns into real expected returns during bucket-level projection. This keeps funding analysis focused on purchasing power rather than nominal balances.
 
-## Features
+Liabilities can be modeled as one-time obligations or recurring annual payouts. Recurring liabilities are expanded into individual annual maturity buckets, each with its own horizon and present value path. This enables the engine to evaluate funding adequacy against a schedule of dated obligations rather than a single terminal value.
 
-- Define **assets, liabilities, and contribution schedules** in a flexible JSON/YAML config  
-- Compute:
-  - Portfolio value today
-  - Projected surplus/shortfall at maturity
-  - Required one‑time net contributions
-  - Required recurring contributions
-- Clear separation between model logic and formatted outputs
+Allocation is policy-driven via a strategy interface. The default glide path uses both funding ratio and time-to-liability to set hedge intensity, blending growth and hedging assets as funded status improves and liability horizons shorten.
 
-## Installation
+The capital structure is bucketed into required capital (mapped to liabilities) and surplus capital (managed separately). Required buckets can release surplus over time; released surplus is aggregated into a dedicated surplus bucket. Final output reports projected surplus/shortfall at maturity, current allocation mix, and calibrated contribution adjustments.
 
-Install with `pip`:
+## Core Design Principles
+- **Liability-first modeling**: liabilities are expanded and valued before asset projection.
+- **Real-term valuation**: inflation-adjusted discounting and real return projection are used throughout buckets.
+- **Monthly projection resolution**: all asset and contribution mechanics are aligned to month-start periods.
+- **Deterministic scenario modeling**: the engine applies explicit assumptions/schedules rather than Monte Carlo simulation.
+- **Funding-ratio feedback into allocation**: allocation responds to both funded status and liability horizon.
+- **Required vs surplus separation**: required buckets fund liabilities; surplus capital is tracked and compounded independently.
+
+## Architecture
+
+### 1. Liability Engine
+- Supports two liability types in scenarios:
+  - `one-time`: single maturity bucket.
+  - `recurring`: expanded into one annual bucket per `duration_years`.
+- Each liability bucket carries a monthly horizon and present-value-remaining series.
+- Present values are tracked through time for funding-ratio and shortfall calculations.
+
+### 2. Contribution Engine
+- Supports contributions as:
+  - Recurring monthly (`frequency: monthly`)
+  - Recurring annual (`frequency: annual`, with contribution `month`)
+  - One-time (`type: one_time`, specific `date`)
+- Contributions are normalized to the monthly projection index.
+- Calibration helpers run iterative search to estimate:
+  - Net one-time contribution needed today (`net_contribution_today`)
+  - Level recurring monthly contribution (`monthly_contribution`)
+- One-time contribution dates must align to the projection timeline month index.
+
+### 3. Assumptions Framework
+- Assumptions can be static constants or date-scheduled values (`default` + `schedule`).
+- CPI inflation supports date schedules.
+- Asset expected returns support per-asset date schedules.
+- Repository includes baseline and stress-style presets (for example high inflation, stagflation, rate spike, equity lost decade variants).
+
+### 4. Allocation Strategy Framework
+- Allocation is abstracted behind an `AllocationStrategy` interface.
+- Default implementation is `GlidePath`.
+- Glide path inputs:
+  - `funding_ratio`
+  - `horizon_months`
+- Output is a deterministic set of asset weights used in bucket projection.
+
+### 5. Bucketed Funding Mechanics
+- Current assets are partitioned into:
+  - **Required capital**: distributed across liability buckets by PV weight.
+  - **Surplus capital**: excess above aggregate liability PV.
+- Required buckets can release surplus when assets exceed PV-remaining.
+- Released surplus is aggregated into a surplus bucket and projected separately.
+- Final funded status combines surplus bucket ending balance and required-bucket shortfalls.
+
+### 6. Scenario Runner & CLI
+- Scenarios are JSON files in `runs/` (with optional constants file).
+- Constants templating supports `${...}` placeholders resolved recursively.
+- CLI can run one or multiple files, or all files in `runs/`.
+- Results are rendered as:
+  - Summary table (assets, surplus/shortfall, contribution calibration fields)
+  - Allocation table (pivoted by scenario)
+
+## Example Output
+
+```text
+Running scenario: runs/sample.json
+
+Summary
+=======
+      name assets_today surplus_at_maturity net_contribution_today monthly_contribution
+0   Sample  $100,000.00         -$42,850.00            $38,400.00             $315.00
+
+Allocations
+===========
+      name intl_equity_developed us_equity_total_market us_nominal_treasury_long
+0   Sample                 12.4%                  49.8%                     37.8%
+```
+
+## Example Scenario File
+
+```yaml
+name: Sample
+assets_today: 100000
+liabilities:
+  - type: recurring
+    amount_today: "${retirement.income}"
+    start_date: "${retirement.date}"
+    discount_rate: "${discount.rate}"
+    duration_years: 30
+  - type: one-time
+    amount_today: 177700
+    discount_rate: "${discount.rate}"
+    start_date: "${retirement.date}"
+contributions:
+  - type: recurring
+    amount: 100
+    frequency: monthly
+    start_date: "2025-01-01"
+    end_date: "${retirement.date}"
+  - type: recurring
+    amount: 5000
+    frequency: annual
+    month: 1
+    end_date: "${retirement.date}"
+  - type: one_time
+    amount: 20000
+    date: "2030-06-01"
+```
+
+## Usage
+
+### Installation
 
 ```bash
 pip install .
 ```
 
-or in editable mode during development:
+For development:
 
 ```bash
 pip install -e .
 ```
 
-## Configuration
+### CLI Commands
 
-Goals are defined in JSON (or Python dict equivalent). An example goal:
-
-```json
-{
-    "name": "College Savings",
-    "assets_today": 0,
-    "liabilities": [
-        {
-            "type": "recurring",
-            "amount_today": 50000,
-            "start_date": "2045-08-01",
-            "duration_years": 4,
-            "inflation_rate": 0.05
-        }
-    ],
-    "contributions": [
-        {
-            "type": "recurring",
-            "amount": 184.61,
-            "frequency": "monthly",
-            "start_date": "today"
-        }
-    ]
-}
-```
-
-## Basic Usage
-
-```python
-from ldi.model import LDIModel
-
-result = LDIModel(
-    assumptions=assumptions,
-    scenario=scenario,
-    allocation_strategy=GlidePath
-).result()
-
-print(result)
-```
-
-## Output Summary
-
-The model returns a structured result that includes:
-- `name` — goal identifier
-- `assets_today` — current assets
-- `surplus_at_maturity` — projected surplus/shortfall
-- Allocation metrics (e.g., equity, fixed income)
-- Required contributions (one‑time and recurring)
-
-Mapping from result keys to display labels is handled in your reporting/presenter layer.
-
-## Tests
-
-Run tests with `pytest`:
+Show CLI help:
 
 ```bash
-pytest
+python -m ldi.cli --help
 ```
 
-## Running via CLI
-
-This project includes a command‑line interface for running LDI scenarios from config files.
-
-After installing the package, you can invoke the CLI directly:
+Run a single scenario file:
 
 ```bash
-python -m ldi.cli run \
-  --file path/to/goal/json \
-  --all run/all/goals \
-  --constants path/to/constants/json
+python -m ldi.cli run --file runs/sample.json --constants runs/constants.json
+```
 
-## Future Work
-- add unit tests
-- tax considerations
-- allow configurable allocation
+Run all scenarios in `runs/`:
 
-## License
+```bash
+python -m ldi.cli run --all --constants runs/constants.json
+```
 
-This project is licensed under the **MIT License**.
+## Feature Summary
+- Deterministic monthly LDI projection engine.
+- Liability expansion for recurring annual payout streams.
+- Bucket-level required/surplus capital mechanics.
+- Funding-ratio/time-horizon glide path allocation policy.
+- Static and scheduled macro/asset assumptions.
+- Contribution schedule handling (monthly, annual, one-time).
+- Contribution calibration utilities for funding-gap closure.
+- Scenario templating with constants substitution and CLI batch execution.
 
+## Non-Goals
+- Monte Carlo or stochastic path simulation.
+- Tax-aware household cash-flow optimization.
+- Intramonth cash-flow timing or execution microstructure.
+- Brokerage order routing or implementation tooling.
