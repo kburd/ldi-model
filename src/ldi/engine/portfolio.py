@@ -97,13 +97,8 @@ class BaseBucket:
             bucket_months = self.df.index.to_period("M")
             ts.index = ts.index.to_period("M")
             aligned = ts.reindex(bucket_months)
-
-            if aligned.isna().any():
-                missing = self.df.index[aligned.isna()]
-                raise ValueError(
-                    f"Missing contributions for months: {missing.strftime('%Y-%m').tolist()}"
-                )
-
+            aligned = aligned.fillna(0.0)
+            
             aligned.index = self.df.index
             return aligned.astype("float64")
 
