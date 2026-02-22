@@ -55,6 +55,8 @@ class LDIModel:
 
             first_withdrawal = datetime.strptime(liability_config["start_date"], "%Y-%m-%d").date()
             withdrawal_amount = liability_config["amount_today"]
+            inflation_rate = liability_config.get("inflation_rate", self.assumptions.inflation_cpi(self.valuation_date))
+            discount_rate = liability_config.get("discount_rate")
 
             if liability_config["type"] == "recurring":
                 duration_years = liability_config["duration_years"]
@@ -139,11 +141,11 @@ class LDIModel:
         if len(self.liabilities) == 0:
             return
 
+        contributions_per_bucket = self.contributions / len(self.liabilities)
         required_capital = min(self.current_balance, self.present_value)
 
         for liability in self.liabilities:
 
-            contributions_per_bucket = self.contributions.reindex(liability.df.index, fill_value=0.0) / len(self.liabilities)
             asset_balance = required_capital * liability.present_value() / self.present_value
             bucket = RequiredBucket(
                 name=liability.maturity_date,
