@@ -149,18 +149,29 @@ def test_basebucket_normalize_contributions_series_aligns_by_month(monthly_index
 @pytest.mark.parametrize(
     "bad_contributions,expected_error,pattern",
     [
+        # Non-datetime index should still fail
         (pd.Series([1.0, 2.0, 3.0], index=[0, 1, 2]), TypeError, "datetime-indexed"),
-        (pd.Series([1.0], index=pd.to_datetime(["2025-01-01"])), ValueError, "Missing contributions"),
+
+        # Non-Series / non-float should still fail
         ([1.0, 2.0], TypeError, "float or pandas Series"),
     ],
 )
-def test_basebucket_normalize_contributions_errors(monthly_index, bad_contributions, expected_error, pattern):
-    df = pd.DataFrame({"horizon": [2, 1, 0], "pv_remaining": [100, 100, 100]}, index=monthly_index)
+def test_basebucket_normalize_contributions_errors(
+    monthly_index, bad_contributions, expected_error, pattern
+):
+    df = pd.DataFrame(
+        {"horizon": [2, 1, 0], "pv_remaining": [100, 100, 100]},
+        index=monthly_index,
+    )
+
     assumptions = DummyAssumptions(
         inflation_by_date={d: 0.0 for d in monthly_index},
         returns_by_date={d: {"bond": 0.0} for d in monthly_index},
     )
-    strategy = RecordingStrategy({"ratio": {"bond": 1.0}, "none": {"bond": 1.0}})
+
+    strategy = RecordingStrategy(
+        {"ratio": {"bond": 1.0}, "none": {"bond": 1.0}}
+    )
 
     with pytest.raises(expected_error, match=pattern):
         BaseBucket(
@@ -172,7 +183,7 @@ def test_basebucket_normalize_contributions_errors(monthly_index, bad_contributi
             contributions=bad_contributions,
             allow_surplus=False,
         )
-
+        
 def test_basebucket_allow_surplus_false_and_negative_cash_supply(monthly_index):
     df = pd.DataFrame(
         {

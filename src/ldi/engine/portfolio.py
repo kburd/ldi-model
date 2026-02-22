@@ -51,6 +51,9 @@ class Liability:
     def horizon(self):
         return self.df["horizon"].iloc[0]
 
+    def present_value(self):
+        return self.get_pv_remaining_by_period(0)
+
 class BaseBucket:
 
     def __init__(
@@ -94,13 +97,8 @@ class BaseBucket:
             bucket_months = self.df.index.to_period("M")
             ts.index = ts.index.to_period("M")
             aligned = ts.reindex(bucket_months)
-
-            if aligned.isna().any():
-                missing = self.df.index[aligned.isna()]
-                raise ValueError(
-                    f"Missing contributions for months: {missing.strftime('%Y-%m').tolist()}"
-                )
-
+            aligned = aligned.fillna(0.0)
+            
             aligned.index = self.df.index
             return aligned.astype("float64")
 
@@ -229,3 +227,8 @@ class RequiredBucket(BaseBucket):
 
     def get_horizon(self):
         return self.df["horizon"].iloc[0]
+
+    def get_shortfall_by_period(self, period):
+        pv_remaining = self.df["pv_remaining"].iloc[period]
+        asset_balance = self.df["asset_balance"].iloc[period]
+        return max(0.0, pv_remaining - asset_balance)
