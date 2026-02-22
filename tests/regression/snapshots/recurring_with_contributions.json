@@ -1,0 +1,20 @@
+{
+  "allocations": {
+    "intl_equity_developed": 0.10394796789238239,
+    "us_equity_total_market": 0.41579187156952957,
+    "us_nominal_treasury_long": 0.4802601605380882
+  },
+  "assets_today": 5000.0,
+  "bucket_balances": {
+    "required_count": 3,
+    "required_end_balances": [
+      2929.710759509464,
+      3572.45772239509,
+      4000.0
+    ],
+    "surplus_end_balance": 157.96300710371708,
+    "surplus_start_balance": 0.0
+  },
+  "name": "recurring_with_contributions",
+  "surplus_at_maturity": 157.96300710371708
+}

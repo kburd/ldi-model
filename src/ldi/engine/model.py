@@ -10,7 +10,7 @@ from ldi.engine.allocator import AllocationStrategy
 
 class LDIModel:
 
-    def __init__(self, *, name: str, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
+    def __init__(self, *, name: str = None, assumptions: Assumptions, scenario: dict, allocation_strategy: AllocationStrategy):
 
         self.name = name or scenario["name"]
         self.current_balance = scenario.get("assets_today", 0)
@@ -64,11 +64,18 @@ class LDIModel:
 
             for i in range(duration_years):
 
+                inflation_rate = liability_config.get("inflation_rate", self.assumptions.inflation_cpi(self.valuation_date))
+                discount_rate = liability_config.get(
+                    "discount_rate",
+                    self.assumptions.asset_returns(self.valuation_date).get("us_nominal_treasury_long", inflation_rate)
+                )
+
                 liability = Liability(
                     amount=withdrawal_amount,
                     valuation_date=self.valuation_date,
                     maturity_date=pd.Timestamp(first_withdrawal + relativedelta(years=i)),
-                    assumptions=self.assumptions
+                    inflation_rate=inflation_rate,
+                    discount_rate=discount_rate,
                 )
                 self.liabilities.append(liability)
 
@@ -129,11 +136,14 @@ class LDIModel:
 
     def _generate_required_buckets(self):
 
-        contributions_per_bucket = self.contributions / len(self.liabilities)
+        if len(self.liabilities) == 0:
+            return
+
         required_capital = min(self.current_balance, self.present_value)
 
         for liability in self.liabilities:
 
+            contributions_per_bucket = self.contributions.reindex(liability.df.index, fill_value=0.0) / len(self.liabilities)
             asset_balance = required_capital * liability.present_value() / self.present_value
             bucket = RequiredBucket(
                 name=liability.maturity_date,

@@ -1,0 +1,18 @@
+{
+  "allocations": {
+    "intl_equity_developed": 0.11453830279658159,
+    "us_equity_total_market": 0.45815321118632635,
+    "us_nominal_treasury_long": 0.42730848601709215
+  },
+  "assets_today": 20000.0,
+  "bucket_balances": {
+    "required_count": 1,
+    "required_end_balances": [
+      10000.0
+    ],
+    "surplus_end_balance": 11498.632419777716,
+    "surplus_start_balance": 10288.443499611543
+  },
+  "name": "baseline_one_time",
+  "surplus_at_maturity": 11498.632419777716
+}
